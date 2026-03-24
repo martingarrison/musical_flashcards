@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#1a1a2e">
+  <title>Sight Reader</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:           #0f0f1a;
+      --surface:      #1a1a2e;
+      --surface-2:    #22223b;
+      --border:       rgba(255,255,255,0.09);
+      --text:         #f0eff6;
+      --text-muted:   #8b89a8;
+      --accent:       #7c6af7;
+      --accent-hover: #9585ff;
+      --success:      #4ade80;
+      --danger:       #f87171;
+      --ease-out:    cubic-bezier(0.22, 1, 0.36, 1);
+      --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+      --dur-base:    220ms;
+      --dur-slow:    380ms;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px 16px 48px;
+    }
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background:
+        radial-gradient(ellipse 60% 50% at 20% 10%, rgba(124,106,247,0.12) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 60% at 80% 85%, rgba(100,200,180,0.07) 0%, transparent 70%);
+      pointer-events: none; z-index: 0;
+    }
+    .app { position: relative; z-index: 1; width: 100%; max-width: 640px; }
+
+    header {
+      display: flex; align-items: center;
+      justify-content: space-between; margin-bottom: 28px;
+    }
+    .logo { font-family: 'Fraunces', serif; font-size: 1.6rem; font-weight: 600; letter-spacing: -0.02em; }
+    .logo span { color: var(--accent); }
+    .score-badge {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 999px; padding: 6px 16px;
+      font-size: 0.82rem; font-weight: 500; color: var(--text-muted);
+      display: flex; gap: 10px;
+    }
+    .score-badge .val { color: var(--text); font-weight: 600; }
+
+    .controls {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 20px; flex-wrap: wrap;
+    }
+    .controls label { font-size: 0.8rem; color: var(--text-muted); font-weight: 500; }
+    .seg-group {
+      display: flex; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    }
+    .seg-group button {
+      background: none; border: none; color: var(--text-muted);
+      font-family: 'DM Sans', sans-serif; font-size: 0.8rem; font-weight: 500;
+      padding: 7px 13px; cursor: pointer; touch-action: manipulation;
+      transition: background var(--dur-base), color var(--dur-base);
+    }
+    .seg-group button.active { background: var(--accent); color: #fff; }
+    .seg-group button:hover:not(.active) { background: var(--surface-2); color: var(--text); }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 20px; padding: 28px 20px 20px; margin-bottom: 16px;
+      box-shadow: 0 8px 48px rgba(0,0,0,0.35); position: relative; overflow: hidden;
+    }
+    .card.animate-in { animation: cardIn var(--dur-slow) var(--ease-spring); }
+    @keyframes cardIn {
+      from { opacity: 0; transform: translateY(10px) scale(0.98); }
+      to   { opacity: 1; transform: none; }
+    }
+    .card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, var(--accent), #a78bfa);
+      border-radius: 20px 20px 0 0;
+    }
+    .card-label {
+      font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 16px;
+    }
+    #staff-container { width: 100%; display: flex; justify-content: center; }
+    #staff-svg { width: 100%; max-width: 560px; overflow: visible; }
+    .note-names { display: flex; justify-content: center; margin-top: 16px; min-height: 24px; }
+
+    /* Listen bar */
+    .listen-bar {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 16px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 12px;
+      margin-bottom: 14px; min-height: 44px;
+      transition: border-color var(--dur-base);
+    }
+    .listen-bar.active { border-color: rgba(124,106,247,0.45); }
+    .listen-bar.done   { border-color: rgba(74,222,128,0.35); }
+    .listen-bar.error  { border-color: rgba(248,113,113,0.35); }
+
+    .mic-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: var(--text-muted); flex-shrink: 0;
+      transition: background var(--dur-base);
+    }
+    .listen-bar.active .mic-dot { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+    .listen-bar.done   .mic-dot { background: var(--success); animation: none; }
+    .listen-bar.error  .mic-dot { background: var(--danger);  animation: none; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.45; transform: scale(0.65); }
+    }
+    .listen-text { font-size: 0.82rem; color: var(--text-muted); flex: 1; }
+    .listen-bar.active .listen-text { color: var(--text); }
+    .detected-note {
+      font-weight: 700; font-size: 0.9rem; color: var(--accent);
+      min-width: 36px; text-align: right; font-family: 'Fraunces', serif;
+    }
+
+    /* Result banner */
+    .result-banner {
+      border-radius: 12px; padding: 13px 18px; margin-bottom: 14px;
+      font-size: 0.88rem; font-weight: 600;
+      display: none; align-items: center; gap: 10px;
+      animation: bannerIn 300ms var(--ease-spring);
+    }
+    @keyframes bannerIn {
+      from { opacity: 0; transform: scale(0.97); }
+      to   { opacity: 1; transform: none; }
+    }
+    .result-banner.show { display: flex; }
+    .result-banner.pass { background: rgba(74,222,128,0.10); border: 1px solid rgba(74,222,128,0.3); color: var(--success); }
+    .result-banner.fail { background: rgba(248,113,113,0.08); border: 1px solid rgba(248,113,113,0.25); color: var(--danger); }
+
+    /* Reveal row */
+    .reveal-row {
+      display: flex; align-items: center; justify-content: center;
+      gap: 8px; margin-bottom: 14px;
+    }
+    .toggle-label { font-size: 0.8rem; color: var(--text-muted); cursor: pointer; user-select: none; }
+    .toggle { position: relative; width: 36px; height: 20px; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-track {
+      position: absolute; inset: 0;
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 999px; cursor: pointer; transition: background var(--dur-base);
+    }
+    .toggle input:checked + .toggle-track { background: var(--accent); border-color: var(--accent); }
+    .toggle-track::after {
+      content: ''; position: absolute;
+      width: 14px; height: 14px; border-radius: 50%; background: #fff;
+      top: 2px; left: 2px; transition: transform var(--dur-base) var(--ease-spring);
+    }
+    .toggle input:checked + .toggle-track::after { transform: translateX(16px); }
+
+    .actions { display: flex; gap: 12px; }
+    .btn {
+      flex: 1; padding: 14px 20px; border-radius: 12px; border: none;
+      font-family: 'DM Sans', sans-serif; font-size: 0.95rem; font-weight: 600;
+      cursor: pointer; touch-action: manipulation;
+      transition: transform var(--dur-base) var(--ease-out), box-shadow var(--dur-base), background var(--dur-base);
+    }
+    .btn:active { transform: scale(0.96); }
+    .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 4px 20px rgba(124,106,247,0.35); }
+    .btn-primary:hover { background: var(--accent-hover); box-shadow: 0 6px 28px rgba(124,106,247,0.45); }
+    .btn-ghost { background: var(--surface); color: var(--text-muted); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: var(--surface-2); color: var(--text); }
+
+    @keyframes noteIn {
+      from { opacity: 0; transform: translateY(-5px); }
+      to   { opacity: 1; transform: none; }
+    }
+    @keyframes chipIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: none; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">Sight<span>Reader</span></div>
+    <div class="score-badge">
+      ✓ <span class="val" id="score-pass">0</span>
+      &nbsp;✗ <span class="val" id="score-fail">0</span>
+    </div>
+  </header>
+
+  <div class="controls">
+    <label>Key:</label>
+    <div class="seg-group" id="key-selector"></div>
+    <label style="margin-left:6px">Notes:</label>
+    <div class="seg-group" id="len-selector"></div>
+  </div>
+
+  <div class="card animate-in" id="flashcard">
+    <div class="card-label">Play this phrase</div>
+    <div id="staff-container">
+      <svg id="staff-svg" viewBox="0 0 560 175" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+    <div class="note-names" id="note-names"></div>
+  </div>
+
+  <div class="listen-bar" id="listen-bar">
+    <div class="mic-dot"></div>
+    <div class="listen-text" id="listen-text">Tap "New Phrase" to begin…</div>
+    <div class="detected-note" id="detected-note"></div>
+  </div>
+
+  <div class="result-banner" id="result-banner"></div>
+
+  <div class="reveal-row">
+    <label class="toggle-label" for="show-toggle">Show note names</label>
+    <label class="toggle">
+      <input type="checkbox" id="show-toggle">
+      <span class="toggle-track"></span>
+    </label>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-ghost" id="btn-skip">Skip</button>
+    <button class="btn btn-primary" id="btn-next">New Phrase →</button>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+// MUSIC DATA
+// ═══════════════════════════════════════════════════
+
+const KEYS = {
+  'C':  { label: 'C',  sharps: [], flats: [] },
+  'G':  { label: 'G',  sharps: ['F'], flats: [] },
+  'D':  { label: 'D',  sharps: ['F','C'], flats: [] },
+  'F':  { label: 'F',  sharps: [], flats: ['B'] },
+  'Bb': { label: 'B♭', sharps: [], flats: ['B','E'] },
+  'A':  { label: 'A',  sharps: ['F','C','G'], flats: [] },
+};
+const KEY_ORDER = ['C','G','D','A','F','Bb'];
+
+// Guitar written convention: sounds one octave lower than written
+// freq = concert pitch (what the guitar actually produces)
+const TREBLE_NOTES = [
+  { slot: -7, name: 'E', writtenOct: 3, freq:  82.41 },
+  { slot: -6, name: 'F', writtenOct: 3, freq:  87.31 },
+  { slot: -5, name: 'G', writtenOct: 3, freq:  98.00 },
+  { slot: -4, name: 'A', writtenOct: 3, freq: 110.00 },
+  { slot: -3, name: 'B', writtenOct: 3, freq: 123.47 },
+  { slot: -2, name: 'C', writtenOct: 4, freq: 130.81 },
+  { slot: -1, name: 'D', writtenOct: 4, freq: 146.83 },
+  { slot:  0, name: 'E', writtenOct: 4, freq: 164.81 },
+  { slot:  1, name: 'F', writtenOct: 4, freq: 174.61 },
+  { slot:  2, name: 'G', writtenOct: 4, freq: 196.00 },
+  { slot:  3, name: 'A', writtenOct: 4, freq: 220.00 },
+  { slot:  4, name: 'B', writtenOct: 4, freq: 246.94 },
+  { slot:  5, name: 'C', writtenOct: 5, freq: 261.63 },
+  { slot:  6, name: 'D', writtenOct: 5, freq: 293.66 },
+  { slot:  7, name: 'E', writtenOct: 5, freq: 329.63 },
+  { slot:  8, name: 'F', writtenOct: 5, freq: 349.23 },
+  { slot:  9, name: 'G', writtenOct: 5, freq: 392.00 },
+  { slot: 10, name: 'A', writtenOct: 5, freq: 440.00 },
+];
+
+// ═══════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════
+
+const state = {
+  key: 'G',
+  noteCount: 6,
+  phrase: [],
+  noteStatus: [],       // 'pending' | 'hit' | 'miss'
+  currentNoteIdx: 0,
+  phraseComplete: false,
+  scorePass: 0,
+  scoreFail: 0,
+  showNames: false,
+  lastXPositions: [],
+  lastTotalW: 560,
+};
+
+// ═══════════════════════════════════════════════════
+// PHRASE GENERATION
+// ═══════════════════════════════════════════════════
+
+const SEMITONE = Math.pow(2, 1/12); // one semitone up
+
+// Return a copy of a note with freq adjusted for the active key signature
+function applyKey(note, keyName) {
+  const key = KEYS[keyName];
+  if (key.sharps.includes(note.name)) {
+    return Object.assign({}, note, { freq: note.freq * SEMITONE });
+  }
+  if (key.flats.includes(note.name)) {
+    return Object.assign({}, note, { freq: note.freq / SEMITONE });
+  }
+  return note;
+}
+
+function generatePhrase(keyName, count) {
+  const pool = TREBLE_NOTES.slice(); // full range E3–A5
+  const midPool = pool.filter(n => n.slot >= -2 && n.slot <= 7);
+  let current = midPool[Math.floor(Math.random() * midPool.length)];
+  const phrase = [applyKey(current, keyName)];
+
+  for (let i = 1; i < count; i++) {
+    const roll = Math.random();
+    let interval = roll < 0.55 ? 1 : roll < 0.80 ? 2 : roll < 0.93 ? 3 : 4;
+    let dir = Math.random() < 0.5 ? 1 : -1;
+    if (current.slot >= 8)  dir = -1;
+    if (current.slot <= -5) dir =  1;
+
+    const targetSlot = current.slot + dir * interval;
+    const candidate = pool.find(n => n.slot === targetSlot);
+    if (candidate) {
+      current = candidate;
+    } else {
+      const fallback = pool.find(n => n.slot === current.slot - dir * interval);
+      current = fallback || current;
+    }
+    phrase.push(applyKey(current, keyName));
+  }
+  return phrase;
+}
+
+// ═══════════════════════════════════════════════════
+// STAFF RENDERER
+// ═══════════════════════════════════════════════════
+
+const STAFF_Y_BOTTOM = 120;
+const SLOT_H = 5;
+const NOTES_START = 82;
+
+function slotToY(slot) { return STAFF_Y_BOTTOM - slot * SLOT_H; }
+
+function noteColor(status, isTarget) {
+  if (status === 'hit')  return '#4ade80';
+  if (status === 'miss') return '#f87171';
+  if (isTarget)          return '#c4bbff';
+  return 'rgba(240,239,246,0.92)';
+}
+function stemColor(status, isTarget) {
+  if (status === 'hit')  return 'rgba(74,222,128,0.75)';
+  if (status === 'miss') return 'rgba(248,113,113,0.75)';
+  if (isTarget)          return 'rgba(196,187,255,0.8)';
+  return 'rgba(240,239,246,0.7)';
+}
+
+function renderStaff(phrase, keyName, showNames, noteStatus, currentNoteIdx) {
+  noteStatus     = noteStatus     || [];
+  currentNoteIdx = currentNoteIdx ?? 0;
+
+  const svg = document.getElementById('staff-svg');
+  svg.innerHTML = '';
+  const noteCount = phrase.length;
+  const totalW = Math.max(400, NOTES_START + noteCount * 58 + 40);
+  state.lastTotalW = totalW;
+  svg.setAttribute('viewBox', `0 0 ${totalW} 175`);
+
+  const ns = 'http://www.w3.org/2000/svg';
+  function el(tag, attrs, parent) {
+    const e = document.createElementNS(ns, tag);
+    for (const [k,v] of Object.entries(attrs)) e.setAttribute(k,v);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+
+  // Staff lines (slots 0,2,4,6,8)
+  for (let i = 0; i < 5; i++) {
+    el('line', { x1: 8, y1: STAFF_Y_BOTTOM - i*2*SLOT_H,
+      x2: totalW-8, y2: STAFF_Y_BOTTOM - i*2*SLOT_H,
+      stroke: 'rgba(200,197,232,0.5)', 'stroke-width': 1.2, 'stroke-linecap': 'round' }, svg);
+  }
+
+  // Treble clef
+  const clef = el('text', { x: 6, y: 128, 'font-size': 72,
+    fill: 'rgba(200,197,232,0.88)', 'font-family': 'serif' }, svg);
+  clef.textContent = '𝄞';
+
+  // Key signature
+  const key = KEYS[keyName];
+  let kx = 50;
+  const SHARP_SLOTS = [8,5,9,6,3,7,4];
+  const FLAT_SLOTS  = [4,7,3,6,2,5,1];
+  if (key.sharps.length > 0) {
+    key.sharps.forEach((_,i) => {
+      const a = el('text', { x: kx, y: slotToY(SHARP_SLOTS[i])+5, 'font-size': 16,
+        fill: 'rgba(200,197,232,0.82)', 'font-family': 'serif',
+        'text-anchor': 'middle', 'dominant-baseline': 'middle' }, svg);
+      a.textContent = '♯'; kx += 11;
+    });
+  } else if (key.flats.length > 0) {
+    key.flats.forEach((_,i) => {
+      const a = el('text', { x: kx, y: slotToY(FLAT_SLOTS[i])+3, 'font-size': 18,
+        fill: 'rgba(200,197,232,0.82)', 'font-family': 'serif',
+        'text-anchor': 'middle', 'dominant-baseline': 'middle' }, svg);
+      a.textContent = '♭'; kx += 11;
+    });
+  }
+
+  // Opening barline
+  el('line', { x1: NOTES_START-16, y1: STAFF_Y_BOTTOM,
+    x2: NOTES_START-16, y2: STAFF_Y_BOTTOM-40,
+    stroke: 'rgba(200,197,232,0.5)', 'stroke-width': 1.5 }, svg);
+
+  // Notes
+  const xPositions = [];
+  const spacing = (totalW - NOTES_START - 32) / noteCount;
+
+  phrase.forEach((note, i) => {
+    const x = NOTES_START + i * spacing + spacing * 0.5;
+    xPositions.push(x);
+    const y = slotToY(note.slot);
+    const status = noteStatus[i] || 'pending';
+    const isTarget = (i === currentNoteIdx) && !state.phraseComplete;
+    const nc = noteColor(status, isTarget);
+    const sc = stemColor(status, isTarget);
+
+    // Target glow ring
+    if (isTarget) {
+      el('ellipse', { cx: x, cy: y, rx: 11, ry: 8.5,
+        fill: 'none', stroke: 'rgba(124,106,247,0.3)', 'stroke-width': 2.5,
+        transform: `rotate(-12,${x},${y})` }, svg);
+    }
+
+    // Ledger lines below
+    if (note.slot < 0) {
+      const lo = note.slot % 2 === 0 ? note.slot : note.slot + 1;
+      for (let ls = -2; ls >= lo; ls -= 2)
+        el('line', { x1: x-11, y1: slotToY(ls), x2: x+11, y2: slotToY(ls),
+          stroke: 'rgba(200,197,232,0.6)', 'stroke-width': 1.3 }, svg);
+    }
+    // Ledger lines above
+    if (note.slot > 8) {
+      const hi = note.slot % 2 === 0 ? note.slot : note.slot - 1;
+      for (let ls = 10; ls <= hi; ls += 2)
+        el('line', { x1: x-11, y1: slotToY(ls), x2: x+11, y2: slotToY(ls),
+          stroke: 'rgba(200,197,232,0.6)', 'stroke-width': 1.3 }, svg);
+    }
+
+    // Stem
+    const up = note.slot < 5;
+    el('line', { x1: up?x+6.5:x-6.5, y1: y, x2: up?x+6.5:x-6.5, y2: up?y-32:y+32,
+      stroke: sc, 'stroke-width': 1.5, 'stroke-linecap': 'round' }, svg);
+
+    // Notehead
+    el('ellipse', { cx: x, cy: y, rx: 6.5, ry: 4.8, fill: nc,
+      transform: `rotate(-12,${x},${y})`,
+      style: `opacity:0;animation:noteIn 240ms cubic-bezier(0.34,1.56,0.64,1) ${i*55}ms forwards` }, svg);
+  });
+
+  // Closing double barline
+  el('line', { x1: totalW-11, y1: STAFF_Y_BOTTOM, x2: totalW-11, y2: STAFF_Y_BOTTOM-40,
+    stroke: 'rgba(200,197,232,0.5)', 'stroke-width': 1.5 }, svg);
+  el('line', { x1: totalW-8, y1: STAFF_Y_BOTTOM, x2: totalW-8, y2: STAFF_Y_BOTTOM-40,
+    stroke: 'rgba(200,197,232,0.5)', 'stroke-width': 3.5 }, svg);
+
+  state.lastXPositions = xPositions;
+  renderNoteNames(phrase, xPositions, totalW, showNames);
+}
+
+function renderNoteNames(phrase, xPositions, totalW, show) {
+  const container = document.getElementById('note-names');
+  container.innerHTML = '';
+  if (!show) return;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('viewBox', `0 0 ${totalW} 24`);
+  svg.style.cssText = 'width:100%;max-width:560px';
+  phrase.forEach((note, i) => {
+    const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+    Object.entries({ x: xPositions[i], y: 16, 'text-anchor':'middle',
+      'font-size': 11, 'font-family':'DM Sans,sans-serif', 'font-weight':600,
+      fill: '#7c6af7',
+      style:`opacity:0;animation:chipIn 200ms cubic-bezier(0.34,1.56,0.64,1) ${i*55+80}ms forwards`
+    }).forEach(([k,v]) => t.setAttribute(k,v));
+    t.textContent = note.name + note.writtenOct;
+    svg.appendChild(t);
+  });
+  container.appendChild(svg);
+}
+
+// ═══════════════════════════════════════════════════
+// AUDIO ENGINE
+// ═══════════════════════════════════════════════════
+
+const audio = {
+  ctx: null, analyser: null, source: null, stream: null,
+  buf: null, rafId: null,
+  stableFreq: null, stableStart: null,
+  silenceStart: null, lastRegistered: null,
+  noteRegistered: false,
+  STABLE_MS:   350,   // ms pitch must hold — long enough to reject harmonics
+  SILENCE_MS:  150,
+  SIL_THRESH:  0.010,
+  CENTS_TOL:   25,    // match tolerance for registration
+  STABLE_CENTS: 20,   // tighter window for stability tracking
+  FFT:         8192,  // larger buffer for better low-freq resolution
+  CORR_THRESH: 0.82,  // lower than before — helps detect low strings
+};
+
+async function startAudio() {
+  if (audio.ctx) return;
+  try {
+    audio.stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    audio.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    audio.analyser = audio.ctx.createAnalyser();
+    audio.analyser.fftSize = audio.FFT;
+    audio.analyser.smoothingTimeConstant = 0;
+    audio.buf = new Float32Array(audio.FFT);
+    audio.source = audio.ctx.createMediaStreamSource(audio.stream);
+    audio.source.connect(audio.analyser);
+    setListenBar('active', listenMsg());
+    audio.rafId = requestAnimationFrame(audioTick);
+  } catch(e) {
+    setListenBar('error', 'Microphone access denied — please allow mic and reload.');
+  }
+}
+
+function stopAudio() {
+  if (audio.rafId) cancelAnimationFrame(audio.rafId);
+  audio.rafId = null;
+  try { audio.source && audio.source.disconnect(); } catch(e){}
+  try { audio.stream && audio.stream.getTracks().forEach(t=>t.stop()); } catch(e){}
+  try { audio.ctx && audio.ctx.close(); } catch(e){}
+  audio.ctx = audio.analyser = audio.source = audio.stream = null;
+}
+
+function audioTick() {
+  if (!audio.analyser) return;
+
+  // Phrase complete — park the loop but keep it alive so newPhrase can resume
+  if (state.phraseComplete) {
+    audio.rafId = requestAnimationFrame(audioTick);
+    return;
+  }
+  audio.analyser.getFloatTimeDomainData(audio.buf);
+
+  const rms = getRMS(audio.buf);
+  const now = performance.now();
+
+  if (rms < audio.SIL_THRESH) {
+    // Silence
+    audio.stableFreq = null;
+    audio.stableStart = null;
+    if (!audio.silenceStart) audio.silenceStart = now;
+    audio.rafId = requestAnimationFrame(audioTick);
+    return;
+  }
+
+  const hadSilence = audio.silenceStart !== null && (now - audio.silenceStart > audio.SILENCE_MS);
+  audio.silenceStart = null;
+
+  const freq = detectPitch(audio.buf, audio.ctx.sampleRate);
+  if (freq === null) {
+    audio.stableFreq = null;
+    audio.rafId = requestAnimationFrame(audioTick);
+    return;
+  }
+
+  // Live display
+  const closest = closestNote(freq);
+  if (closest) document.getElementById('detected-note').textContent = closest.name + closest.writtenOct;
+
+  // Stability gate:
+  // Register as soon as pitch holds stable for STABLE_MS.
+  // Block re-triggering on the same sustained note (noteRegistered flag).
+  // Silence between notes resets the gate so the next note can register.
+  if (hadSilence) audio.noteRegistered = false;
+
+  if (audio.stableFreq !== null && Math.abs(cents(freq, audio.stableFreq)) < audio.STABLE_CENTS) {
+    if (!audio.noteRegistered && (now - audio.stableStart) >= audio.STABLE_MS) {
+      registerNote(freq);
+      audio.noteRegistered = true;
+    }
+  } else {
+    // New pitch — start a fresh stability window
+    audio.stableFreq = freq;
+    audio.stableStart = now;
+    audio.noteRegistered = false;
+  }
+
+  audio.rafId = requestAnimationFrame(audioTick);
+}
+
+function registerNote(freq) {
+  const idx = state.currentNoteIdx;
+  if (idx >= state.phrase.length) return;
+
+  const target = state.phrase[idx];
+  const hit = Math.abs(cents(freq, target.freq)) <= audio.CENTS_TOL;
+  state.noteStatus[idx] = hit ? 'hit' : 'miss';
+  state.currentNoteIdx++;
+
+  renderStaff(state.phrase, state.key, state.showNames, state.noteStatus, state.currentNoteIdx);
+
+  if (state.currentNoteIdx >= state.phrase.length) {
+    phraseComplete();
+  } else {
+    setListenBar('active', listenMsg());
+  }
+}
+
+function phraseComplete() {
+  state.phraseComplete = true;
+  // Don't cancel the RAF loop — audioTick checks state.phraseComplete and parks.
+  // newPhrase() will clear the flag and the loop resumes automatically.
+
+  const misses = state.noteStatus.filter(s => s === 'miss').length;
+  const hits   = state.noteStatus.filter(s => s === 'hit').length;
+
+  if (misses === 0) {
+    state.scorePass++;
+    document.getElementById('score-pass').textContent = state.scorePass;
+    showBanner('pass', '🎸 Perfect — all ' + hits + ' notes correct!');
+  } else {
+    state.scoreFail++;
+    document.getElementById('score-fail').textContent = state.scoreFail;
+    showBanner('fail', misses + ' note' + (misses > 1 ? 's' : '') + ' missed — '
+      + hits + ' / ' + state.phrase.length + ' correct');
+  }
+
+  setListenBar('done', 'Done — tap "New Phrase" to continue.');
+  document.getElementById('detected-note').textContent = '';
+}
+
+// ── Pitch math ──────────────────────────────────────
+
+function getRMS(buf) {
+  let s = 0;
+  for (let i = 0; i < buf.length; i++) s += buf[i]*buf[i];
+  return Math.sqrt(s / buf.length);
+}
+
+function cents(f, target) {
+  return 1200 * Math.log2(f / target);
+}
+
+function closestNote(freq) {
+  let best = null, bc = Infinity;
+  for (const n of TREBLE_NOTES) {
+    const c = Math.abs(cents(freq, n.freq));
+    if (c < bc) { bc = c; best = n; }
+  }
+  return bc < 120 ? best : null;
+}
+
+// Autocorrelation pitch detector with quadratic interpolation
+function detectPitch(buf, sampleRate) {
+  const N = buf.length;
+  const half = Math.floor(N / 2);
+  let bestOff = -1, bestCorr = 0, lastCorr = 1;
+  let found = false;
+  const THRESH = audio.CORR_THRESH;
+
+  for (let off = 1; off < half; off++) {
+    let corr = 0;
+    for (let i = 0; i < half; i++) corr += Math.abs(buf[i] - buf[i+off]);
+    corr = 1 - corr / half;
+
+    if (corr > THRESH && corr > lastCorr) {
+      found = true;
+      if (corr > bestCorr) { bestCorr = corr; bestOff = off; }
+    } else if (found) {
+      if (bestOff < 1) return null;
+      // Quadratic interpolation for sub-sample accuracy
+      const y1 = 1 - offCorr(buf, half, bestOff-1);
+      const y2 = 1 - offCorr(buf, half, bestOff);
+      const y3 = 1 - offCorr(buf, half, bestOff+1);
+      const denom = y1 - 2*y2 + y3;
+      const refined = denom !== 0 ? bestOff + 0.5*(y1-y3)/denom : bestOff;
+      const f = sampleRate / refined;
+      // Sanity-check: guitar range E2–A4 concert (82–440 Hz)
+      return (f >= 75 && f <= 480) ? f : null;
+    }
+    lastCorr = corr;
+  }
+  return null;
+}
+
+function offCorr(buf, half, off) {
+  let c = 0;
+  for (let i = 0; i < half; i++) c += Math.abs(buf[i] - buf[i+off]);
+  return c / half;
+}
+
+// ═══════════════════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════════════════
+
+function listenMsg() {
+  return 'Listening… note ' + (state.currentNoteIdx+1) + ' of ' + state.phrase.length;
+}
+
+function setListenBar(mode, text) {
+  const bar = document.getElementById('listen-bar');
+  bar.className = 'listen-bar ' + mode;
+  document.getElementById('listen-text').textContent = text;
+}
+
+function showBanner(type, msg) {
+  const b = document.getElementById('result-banner');
+  b.className = 'result-banner show ' + type;
+  b.textContent = msg;
+}
+
+function hideBanner() {
+  document.getElementById('result-banner').className = 'result-banner';
+}
+
+// ═══════════════════════════════════════════════════
+// ACTIONS
+// ═══════════════════════════════════════════════════
+
+async function newPhrase() {
+  state.phrase         = generatePhrase(state.key, state.noteCount);
+  state.noteStatus     = state.phrase.map(() => 'pending');
+  state.currentNoteIdx = 0;
+  state.phraseComplete = false;
+
+  audio.stableFreq = null; audio.stableStart = null;
+  audio.silenceStart = null; audio.lastRegistered = null;
+  audio.noteRegistered = false;
+
+  hideBanner();
+  document.getElementById('detected-note').textContent = '';
+
+  const card = document.getElementById('flashcard');
+  card.classList.remove('animate-in');
+  void card.offsetHeight;
+  card.classList.add('animate-in');
+
+  renderStaff(state.phrase, state.key, state.showNames, state.noteStatus, 0);
+
+  if (!audio.ctx) {
+    setListenBar('active', 'Starting microphone…');
+    await startAudio();
+  } else {
+    // RAF loop is already running (just parked) — clearing phraseComplete resumes it
+    setListenBar('active', listenMsg());
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// BUILD UI
+// ═══════════════════════════════════════════════════
+
+function buildKeySelector() {
+  const c = document.getElementById('key-selector');
+  KEY_ORDER.forEach(k => {
+    const btn = document.createElement('button');
+    btn.textContent = KEYS[k].label;
+    if (k === state.key) btn.classList.add('active');
+    btn.addEventListener('click', () => {
+      state.key = k;
+      c.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      newPhrase();
+    });
+    c.appendChild(btn);
+  });
+}
+
+function buildLengthSelector() {
+  const c = document.getElementById('len-selector');
+  [5,6,7,8].forEach(n => {
+    const btn = document.createElement('button');
+    btn.textContent = n;
+    if (n === state.noteCount) btn.classList.add('active');
+    btn.addEventListener('click', () => {
+      state.noteCount = n;
+      c.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      newPhrase();
+    });
+    c.appendChild(btn);
+  });
+}
+
+buildKeySelector();
+buildLengthSelector();
+
+document.getElementById('btn-next').addEventListener('click', newPhrase);
+document.getElementById('btn-skip').addEventListener('click', newPhrase);
+document.getElementById('show-toggle').addEventListener('change', e => {
+  state.showNames = e.target.checked;
+  renderStaff(state.phrase, state.key, state.showNames, state.noteStatus, state.currentNoteIdx);
+});
+
+// Initial render — no mic until first tap
+state.phrase     = generatePhrase(state.key, state.noteCount);
+state.noteStatus = state.phrase.map(() => 'pending');
+renderStaff(state.phrase, state.key, false, state.noteStatus, 0);
+</script>
+</body>
+</html>
